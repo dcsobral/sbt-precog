@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package precog
+package precog.mocks
 
 import github4s.domain.{Label, PullRequestBase}
 import precog.domain.PullRequestDraft

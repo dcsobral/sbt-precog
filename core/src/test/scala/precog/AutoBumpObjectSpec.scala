@@ -329,35 +329,41 @@ class AutoBumpObjectSpec(params: CommandLine) extends Specification with org.spe
   }
 
   "getSbt" should {
-    import AutoBump.getSbt
+    import AutoBump.{getSbt, SbtParams}
     "use environment if absolute path" in {
       implicit val failureRunner: Runner[Id] = runnerId(1)
       val config = Runner.DefaultConfig.withEnv("SBT" -> "/usr/local/bin/sbt")
-      getSbt[Id](config) mustEqual "/usr/local/bin/sbt"
+      getSbt[Id](SbtParams, config) mustEqual s"/usr/local/bin/sbt $SbtParams"
     }
 
     "use environment if relative path and it exists on the runner" in {
       implicit val successRunner: Runner[Id] = runnerId(0)
       val config = Runner.DefaultConfig.withEnv("SBT" -> "tools/bin/sbt")
-      getSbt[Id](config) mustEqual "tools/bin/sbt"
+      getSbt[Id](SbtParams, config) mustEqual s"tools/bin/sbt $SbtParams"
     }
 
     "use fallback if relative path and it doesn't exist on the runner" in {
       implicit val failureRunner: Runner[Id] = runnerId(1)
       val config = Runner.DefaultConfig.withEnv("SBT" -> "tools/bin/sbt")
-      getSbt[Id](config) mustEqual "sbt"
+      getSbt[Id](SbtParams, config) mustEqual s"sbt $SbtParams"
     }
 
     "use environment if not a path" in {
       implicit val failureRunner: Runner[Id] = runnerId(1)
       val config = Runner.DefaultConfig.withEnv("SBT" -> "sbt-extras")
-      getSbt[Id](config) mustEqual "sbt-extras"
+      getSbt[Id](SbtParams, config) mustEqual s"sbt-extras $SbtParams"
     }
 
     "use fallback if no environment" in {
       implicit val successRunner: Runner[Id] = runnerId(0)
       val config = Runner.DefaultConfig
-      getSbt[Id](config) mustEqual "sbt"
+      getSbt[Id](SbtParams, config) mustEqual s"sbt $SbtParams"
+    }
+
+    "append parameters to sbt command" in {
+      implicit val failureRunner: Runner[Id] = runnerId(1)
+      val config = Runner.DefaultConfig.withEnv("SBT" -> "sbt-extras")
+      getSbt[Id]("-this and -that", config) mustEqual "sbt-extras -this and -that"
     }
   }
 }

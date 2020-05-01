@@ -36,6 +36,7 @@ import precog.AutoBump.{ChangeLabel, UpdateBranch}
 import precog.algebras.Runner.RunnerConfig
 import precog.algebras._
 import precog.domain._
+import precog.mocks.TestEnv
 
 import scala.collection.immutable
 import scala.concurrent.duration.TimeUnit
@@ -154,8 +155,8 @@ class AutoBumpSpec(params: CommandLine) extends Specification with ScalaCheck wi
 
   "tryUpdateDependencies" should {
     val successRunner = TestRunner("updateDependencies").responding {
-      case ("git" :: _, _)                                => Nil
-      case ("sbt" :: "trickleUpdateDependencies" :: _, _) =>
+      case ("git" :: _, _)                                                => Nil
+      case ("sbt" :: "-sbt-param" :: "trickleUpdateDependencies" :: _, _) =>
         """
           |[INFO] Updated revision org-repo-1 1.0.0 -> 1.0.1
           |[INFO] Updated feature org-repo-2 2.0.1 -> 2.1.0
@@ -164,9 +165,9 @@ class AutoBumpSpec(params: CommandLine) extends Specification with ScalaCheck wi
     }
 
     val successRunnerWithSbt = TestRunner("localSbt").responding {
-      case (List("test", "-x", "./sbt"), _)                 => Nil
-      case ("git" :: _, _)                                  => Nil
-      case ("./sbt" :: "trickleUpdateDependencies" :: _, _) =>
+      case (List("test", "-x", "./sbt"), _)                                 => Nil
+      case ("git" :: _, _)                                                  => Nil
+      case ("./sbt" :: "-sbt-param" :: "trickleUpdateDependencies" :: _, _) =>
         """
           |[INFO] Updated revision org-repo-1 1.0.0 -> 1.0.1
           |[INFO] Updated feature org-repo-2 2.0.1 -> 2.1.0
@@ -188,7 +189,7 @@ class AutoBumpSpec(params: CommandLine) extends Specification with ScalaCheck wi
 
       state.cmds must contain(allOf(
         ("", "mkdir sbt-precog-updateDependencies"),
-        ("sbt-precog-updateDependencies", "sbt trickleUpdateDependencies")))
+        ("sbt-precog-updateDependencies", "sbt -sbt-param trickleUpdateDependencies")))
     }
 
     "extract label and changes when updating dependencies" in {
@@ -272,7 +273,7 @@ class AutoBumpSpec(params: CommandLine) extends Specification with ScalaCheck wi
 
       val state = tryUpdate.runS(env).unsafeRunSync()
 
-      state.cmds must contain(("sbt-precog-localSbt", "./sbt trickleUpdateDependencies"))
+      state.cmds must contain(("sbt-precog-localSbt", "./sbt -sbt-param trickleUpdateDependencies"))
     }
 
     "fallback to 'sbt' if SBT is set to './sbt' but it does not exist" in {
@@ -282,7 +283,7 @@ class AutoBumpSpec(params: CommandLine) extends Specification with ScalaCheck wi
 
       val state = tryUpdate.runS(env).unsafeRunSync()
 
-      state.cmds must contain(("sbt-precog-updateDependencies", "sbt trickleUpdateDependencies"))
+      state.cmds must contain(("sbt-precog-updateDependencies", "sbt -sbt-param trickleUpdateDependencies"))
     }
   }
 
@@ -303,7 +304,7 @@ class AutoBumpSpec(params: CommandLine) extends Specification with ScalaCheck wi
 
     "return UpdateError if there are missing dependencies" in {
       implicit val runner: Runner[Test] = TestRunner("noUpdates").responding {
-        case (List("sbt", "trickleIsUpToDate"), _) => Nil
+        case (List("sbt", "-sbt-param", "trickleIsUpToDate"), _) => Nil
       }
       val env = TestEnv.empty
       val verifyUpdate = autobump.verifyUpdateDependencies[Test](updateBranch)
@@ -315,7 +316,7 @@ class AutoBumpSpec(params: CommandLine) extends Specification with ScalaCheck wi
 
     "fail if project versions are not up-to-date" in {
       implicit val runner: Runner[Test] = TestRunner("noUpdates").responding {
-        case (List("sbt", "update"), _) => Nil
+        case (List("sbt", "-sbt-param", "update"), _) => Nil
       }
       val env = TestEnv.empty
       val verifyUpdate = autobump.verifyUpdateDependencies[Test](updateBranch)
@@ -518,14 +519,14 @@ class AutoBumpSpec(params: CommandLine) extends Specification with ScalaCheck wi
 
   "createPullRequest" should {
     val successRunner = TestRunner("updateDependencies").responding {
-      case ("git" :: _, _)                                => Nil
-      case ("sbt" :: "trickleUpdateDependencies" :: _, _) =>
+      case ("git" :: _, _)                                                => Nil
+      case ("sbt" :: "-sbt-param" :: "trickleUpdateDependencies" :: _, _) =>
         """
           |[INFO] Updated revision org-repo-1 1.0.0 -> 1.0.1
           |[INFO] Updated feature org-repo-2 2.0.1 -> 2.1.0
           |[INFO] Updated breaking org-repo-3 3.1.2 -> 4.1.1
           |[INFO] version: breaking""".stripMargin.split('\n').toList
-      case ("sbt" :: _, _)                                => Nil
+      case ("sbt" :: _, _)                                                => Nil
     }
 
     "create pull requests that it identifies as its own" in {
@@ -562,7 +563,7 @@ object AutoBumpSpec {
   val log = sbt.util.Logger.Null
   val owner = "thatOrg"
   val repoSlug = "thatRepo"
-  val autobump = new AutoBump("thisRepo", owner, repoSlug, "toClone", log)
+  val autobump = new AutoBump("thisRepo", owner, repoSlug, "toClone", "-sbt-param", log)
 
   implicit val clockTest: Clock[Test] = new Clock[Test] {
 
@@ -577,6 +578,7 @@ object AutoBumpSpec {
     }
   }
 
+  // TODO: extract class for each interpreter with an F dependency on StateT/ReaderT, and Lens[Env, MyTestInterpEnv]
   implicit val draftPullRequestsTest: DraftPullRequests[Test] = new DraftPullRequests[Test] {
     override def draftPullRequest(
         owner: String,

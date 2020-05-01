@@ -111,20 +111,32 @@ object AutoBump {
     }
   }
 
-  sealed abstract class ChangeLabel(val label: String) extends Product with Serializable
+  sealed abstract class ChangeLabel(val name: String) extends Product with Serializable {
+    def label: String = s"version: $name"
+  }
+
   object ChangeLabel {
-    case object Revision extends ChangeLabel("version: revision")
-    case object Feature extends ChangeLabel("version: feature")
-    case object Breaking extends ChangeLabel("version: breaking")
+
+    case object Revision extends ChangeLabel("revision")
+
+    case object Feature extends ChangeLabel("feature")
+
+    case object Breaking extends ChangeLabel("breaking")
 
     val values: List[ChangeLabel] = List(Revision, Feature, Breaking)
     val order: Map[ChangeLabel, Int] = values.zipWithIndex.toMap
     implicit val ordering: Order[ChangeLabel] = Order.by(order)
-    val fromString: Map[String, ChangeLabel] = values.map(change => change.label -> change).toMap
+    val fromLabel: Map[String, ChangeLabel] = values.map(change => change.label -> change).toMap
+    val fromName: Map[String, ChangeLabel] = values.map(change => change.name -> change).toMap
     val labelPattern: Regex = values.map(_.label).mkString("|").r
+    val namePattern: Regex = values.map(_.name).mkString("|").r
 
     def apply(label: String): Option[ChangeLabel] = {
-      fromString.get(label)
+      fromLabel.get(label)
+    }
+
+    object FromName {
+      def unapply(name: String): Option[ChangeLabel] = fromName.get(name)
     }
 
     def unapply(arg: String): Option[ChangeLabel] =
@@ -133,8 +145,9 @@ object AutoBump {
 
   val AutoBumpLabel = ":robot:"
   val PullRequestFilters: List[PRFilter] = List(PRFilterOpen, PRFilterSortCreated, PRFilterOrderAsc, PRFilterBase("master"))
-  val LinkRelation: Regex = """<(.*?)>; rel="(\w+)"""".r
+  val LinkRelation: Regex = raw"""<(.*?)>; rel="(\w+)"""".r
   val PerPage = 100
+  val SbtParams: String = "-batch -no-colors"
 
   def autoBumpCommitTitle(author: String): String = f"Applied dependency updates by $author%s"
 
@@ -185,7 +198,6 @@ object AutoBump {
     }
   }
 
-
   /** Extract updated versions from trickleUpdateDependencies log */
   def extractChanges(lines: List[String]): List[String] = {
     lines.filter(_ contains "Updated ") map { line =>
@@ -209,9 +221,9 @@ object AutoBump {
   }
 
   /** Use SBT environment variable, but, if relative path, check for existence or fallback */
-  def getSbt[F[_]: Monad: Runner](runnerConf: RunnerConfig): F[String] = {
+  def getSbt[F[_]: Monad: Runner](sbtParams: String, runnerConf: RunnerConfig): F[String] = {
     val fallback = "sbt"
-    runnerConf.env.get("SBT") match {
+    (runnerConf.env.get("SBT") match {
       case Some(path) if new File(path).isAbsolute => Monad[F].point(path)
       case Some(path) if path.contains('/')        =>
         for {
@@ -219,7 +231,7 @@ object AutoBump {
         } yield if (res == 0) path else fallback
       case Some(path)                              => Monad[F].point(path)
       case None                                    => Monad[F].point(fallback)
-    }
+    }).fmap(cmd => s"$cmd $sbtParams")
   }
 }
 
@@ -228,6 +240,7 @@ class AutoBump(
     owner: String,
     repoSlug: String,
     cloningURL: String,
+    sbtParams: String,
     log: Logger) {
   import AutoBump._
 
@@ -320,7 +333,7 @@ class AutoBump(
       oldestPullRequest <- getOldestAutoBumpPullRequest
       (flag, branchName) <- getBranch(oldestPullRequest)
       _ <- runner !! f"git checkout $flag%s $branchName%s"
-      sbt <- getSbt[F](atTemp)
+      sbt <- getSbt[F](sbtParams, atTemp)
       lines <- runner ! f"$sbt%s trickleUpdateDependencies"
       changes = extractChanges(lines)
       maybeLabel = extractLabel(lines)
@@ -330,7 +343,7 @@ class AutoBump(
   def verifyUpdateDependencies[F[_]: Sync: Runner](updateBranch: UpdateBranch): F[Either[Warnings, Unit]] = {
     val runner = Runner[F](updateBranch.runnerConf)
     for {
-      sbt <- getSbt[F](updateBranch.runnerConf)
+      sbt <- getSbt[F](sbtParams, updateBranch.runnerConf)
       _ <- runner ! f"$sbt%s trickleIsUpToDate"
       updateResult <- (runner !! f"$sbt%s update").attempt
     } yield updateResult.leftMap(_ => Warnings.UpdateError).void

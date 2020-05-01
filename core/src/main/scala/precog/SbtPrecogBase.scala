@@ -530,12 +530,14 @@ abstract class SbtPrecogBase extends AutoPlugin {
             case (newRevision, dependencyRepository) =>
               versions.get(dependencyRepository) match {
                 case Some(currentRevision) =>
+                  // TODO: create a CHANGE, use it to print everything
                   val currentVersion = VersionNumber(currentRevision)
                   val newVersion = VersionNumber(newRevision)
                   val testRevision = VersionNumber.SecondSegment.isCompatible(currentVersion, newVersion)
                   val testBreaking = !VersionNumber.SemVer.isCompatible(currentVersion, newVersion)
                   isRevision &&= testRevision
                   isBreaking ||= testBreaking
+                  // TODO: get URL, get org/repo from URL, print that split by colon
                   log.info(s"Updated ${getChange(testRevision, testBreaking)} $dependencyRepository $currentVersion -> $newRevision")
 
                 case None                  =>
@@ -582,7 +584,7 @@ abstract class SbtPrecogBase extends AutoPlugin {
         val cloningURL = f"https://_:$token%s@github.com/$owner%s/$repoSlug%s"
 
         previous(repository)
-        new AutoBump(author, owner, repoSlug, cloningURL, log)
+        new AutoBump(author, owner, repoSlug, cloningURL, AutoBump.SbtParams, log)
           .createPullRequest[IO](runnerConfig)
           .unsafeRunSync()
       })

@@ -16,22 +16,24 @@
 
 package precog
 
-import sbt.util.{Level, Logger}
+import cats.implicits._
+import precog.AutoBump.ChangeLabel
+import sbttrickle.metadata.ModuleUpdateData
 
 import scala.collection.immutable.Map
-import scala.collection.mutable.Buffer
 
-//noinspection ReferenceMustBePrefixed
-class TestLogger extends Logger {
-  val exceptions: Buffer[Throwable] = Buffer.empty
-  val successes: Buffer[String] = Buffer.empty
-  val logs: Map[Level.Value, Buffer[String]] = Level.values.map(_ -> Buffer.empty[String]).toMap
-
-  override def trace(t: => Throwable): Unit = exceptions.append(t)
-  override def success(message: => String): Unit = successes.append(message)
-  override def log(level: Level.Value, message: => String): Unit = logs(level).append(message)
+final case class Changes(changes: Map[ChangeLabel, List[Change]]) {
+  val label: ChangeLabel = changes.keys.max
 }
 
-object TestLogger {
-  def apply() = new TestLogger
+object Changes {
+
+  def fromOutdatedDependencies(outdated: Seq[ModuleUpdateData]): Changes = ???
+
+  /** Extract updated versions from trickleUpdateDependencies log */
+  def fromSummary(lines: List[String]): Changes = {
+    val changes = lines.flatMap(Change.fromString).groupBy(_.label)
+    Changes(changes)
+  }
+
 }

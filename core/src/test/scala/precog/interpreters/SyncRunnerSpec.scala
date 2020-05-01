@@ -22,9 +22,9 @@ import java.nio.file.{Files, Path}
 import org.specs2.main.CommandLine
 
 import cats.effect.IO
-import precog.TestLogger
 import precog.algebras.Runner
 import precog.algebras.Runner.{RunnerConfig, RunnerException}
+import precog.mocks.TestLogger
 import sbt.util.{Level, Logger}
 
 import scala.collection.immutable.Seq
