@@ -324,6 +324,14 @@ class AutoBump(
     Labels[F].removeLabel(owner, repoSlug, pullRequest.number, label).rethrowGHError("removeLabel")
   }
 
+  def logPrUpdate[F[_]: Sync](maybePullRequest: Option[PullRequestDraft]): F[Unit] = {
+    maybePullRequest map { pr =>
+      Sync[F] delay {
+        log.info(s"Updating pull request #${pr.number} (${pr.html_url})")
+      }
+    } getOrElse Sync[F].unit
+  }
+
   def tryUpdateDependencies[F[_]: Sync: Clock: Runner: DraftPullRequests: Labels](runnerConf: RunnerConfig)
       : F[Either[Warnings, UpdateBranch]] = {
     for {
@@ -331,6 +339,7 @@ class AutoBump(
       runner = Runner[F](atTemp)
       _ <- runner !! f"git clone --depth 1 --no-single-branch $cloningURL%s ."
       oldestPullRequest <- getOldestAutoBumpPullRequest
+      _ <- logPrUpdate(oldestPullRequest)
       (flag, branchName) <- getBranch(oldestPullRequest)
       _ <- runner !! f"git checkout $flag%s $branchName%s"
       sbt <- getSbt[F](sbtParams, atTemp)

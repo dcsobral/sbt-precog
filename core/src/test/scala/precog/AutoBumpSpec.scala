@@ -36,7 +36,8 @@ import precog.AutoBump.{ChangeLabel, UpdateBranch}
 import precog.algebras.Runner.RunnerConfig
 import precog.algebras._
 import precog.domain._
-import precog.mocks.TestEnv
+import precog.mocks.{TestEnv, TestLogger}
+import sbt.util.Level
 
 import scala.collection.immutable
 import scala.concurrent.duration.TimeUnit
@@ -243,6 +244,26 @@ class AutoBumpSpec(params: CommandLine) extends Specification with ScalaCheck wi
       result must beRight(matchA[UpdateBranch].pullRequest(beSome(matchA[PullRequestDraft].title("Auto Bump 1"))))
     }
 
+    "log PR information if there's an open PR" in {
+      implicit val runner: Runner[Test] = successRunner
+      val testLog = TestLogger()
+      val ab = new AutoBump("thisRepo", owner, repoSlug, "toClone", "-sbt-param", testLog)
+      val env = TestEnv.empty
+          .withLabel(owner, repoSlug, 1, AutoBump.AutoBumpLabel)
+          .withLabel(owner, repoSlug, 2, AutoBump.AutoBumpLabel)
+          .withLabel(owner, repoSlug, 3, AutoBump.AutoBumpLabel)
+          .withPR(owner, repoSlug, "Auto Bump 1", "", "trickle/branch", "master", "CLOSED", false)
+          .withPR(owner, repoSlug, "Auto Bump 2", "", "trickle/branch", "master", "OPEN", true)
+          .withPR(owner, repoSlug, "Auto Bump 3", "", "trickle/branch", "master", "OPEN", false)
+      val tryUpdate = ab.tryUpdateDependencies[Test](Runner.DefaultConfig)
+
+      val _ = tryUpdate.runS(env).unsafeRunSync()
+
+      testLog.logs(Level.Info) must contain(allOf(
+        contain("Updating pull request #2"),
+        contain(s"https://github.com/$owner/$repoSlug/pulls/2")))
+    }
+
     "checkout new branch if there isn't an open PR" in {
       implicit val runner: Runner[Test] = successRunner
       val env = TestEnv.empty
@@ -253,6 +274,18 @@ class AutoBumpSpec(params: CommandLine) extends Specification with ScalaCheck wi
       state must matchA[TestEnv].cmds(contain(
         ("sbt-precog-updateDependencies", "git checkout -b trickle/version-bump-1")))
       result must beRight(matchA[UpdateBranch].pullRequest(beNone))
+    }
+
+    "not log anything if there isn't an open PR" in {
+      implicit val runner: Runner[Test] = successRunner
+      val testLog = TestLogger()
+      val ab = new AutoBump("thisRepo", owner, repoSlug, "toClone", "-sbt-param", testLog)
+      val env = TestEnv.empty
+      val tryUpdate = autobump.tryUpdateDependencies[Test](Runner.DefaultConfig)
+
+      val _ = tryUpdate.runS(env).unsafeRunSync()
+
+      testLog.logs(Level.Info) must beEmpty
     }
 
     "return a runner in the checked out branch folder" in {

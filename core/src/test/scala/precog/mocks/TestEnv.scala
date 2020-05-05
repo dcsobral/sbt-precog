@@ -40,7 +40,7 @@ case class TestEnv(
     val prList = prs.getOrElse((owner, repo), Nil)
     val pr = PullRequestDraft(
       issuesCounter, issuesCounter, s"node_$issuesCounter", state, title, Some(body), false, draft,
-      s"https://github.com/$owner/$repo", issuesCounter.toString, None, None, None, None,
+      s"https://github.com/$owner/$repo/pulls/$issuesCounter", issuesCounter.toString, None, None, None, None,
       Some(PullRequestBase(Some(to), to, (issuesCounter + 1).toString, None, None)),
       Some(PullRequestBase(Some(from), from, issuesCounter.toString, None, None)),
       None, None)
