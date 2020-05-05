@@ -31,7 +31,7 @@ import github4s.GHError.{NotFoundError, UnprocessableEntityError}
 import github4s.GHResponse
 import github4s.domain._
 import precog.AutoBump.ChangeLabel.Revision
-import precog.AutoBump.Warnings.{NoChangesError, NoLabel, NotOldest, PushError, UpdateError}
+import precog.AutoBump.Warnings.{NoChangesError, NoChangesOnExistingPullRequest, NoLabel, NotOldest, PushError, UpdateError}
 import precog.AutoBump.{ChangeLabel, UpdateBranch}
 import precog.algebras.Runner.RunnerConfig
 import precog.algebras._
@@ -383,7 +383,7 @@ class AutoBumpSpec(params: CommandLine) extends Specification with ScalaCheck wi
       })
     }
 
-    "return NoChangesError if committing fails" in {
+    "return NoChangesError if committing fails and there are no open pull requests" in {
       implicit val runner: Runner[Test] = TestRunner("commit").responding {
         case (List("git", "add", "."), _) => Nil
       }
@@ -393,6 +393,23 @@ class AutoBumpSpec(params: CommandLine) extends Specification with ScalaCheck wi
       val result = tryCommit.runA(env).unsafeRunSync()
 
       result must beLeft(NoChangesError)
+    }
+
+    "return NoChangesOnExistingPullRequest if committing fails when updating a pull requests" in {
+      implicit val runner: Runner[Test] = TestRunner("commit").responding {
+        case (List("git", "add", "."), _) => Nil
+      }
+      val env = TestEnv.empty
+          .withLabel(owner, repoSlug, 1, AutoBump.AutoBumpLabel)
+          .withLabel(owner, repoSlug, 1, ChangeLabel.Revision.label)
+          .withPR(owner, repoSlug, "Auto Bump", "", "trickle/existing-branch", "master", "OPEN", true)
+      val existingPR = env.prs((owner, repoSlug)).headOption
+      val updateBranch = UpdateBranch(Runner.DefaultConfig, "trickle/existing-branch", existingPR, Nil, ChangeLabel.Feature)
+      val tryCommit = autobump.tryCommit[Test](updateBranch)
+
+      val result = tryCommit.runA(env).unsafeRunSync()
+
+      result must beLeft(NoChangesOnExistingPullRequest)
     }
   }
 

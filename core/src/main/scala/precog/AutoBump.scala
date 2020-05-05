@@ -67,21 +67,27 @@ object AutoBump {
   object Warnings {
 
     case object NoLabel extends Warnings {
-      def warn[F[_]: Sync](log: Logger): F[Unit] = Sync[F].delay {
+      def warn[F[_]: Sync](log: Logger): F[Unit] = Sync[F] delay {
         log.warn("Change label not found!")
         log.warn("Either the repository is already up-to-date, or it needs a custom trickleUpdateDependencies")
       }
     }
 
     case object UpdateError extends Warnings {
-      def warn[F[_]: Sync](log: Logger): F[Unit] = Sync[F].delay {
+      def warn[F[_]: Sync](log: Logger): F[Unit] = Sync[F] delay {
         log.warn("was unable to run `sbt update` following the trickle application")
         log.warn("this may mean that the some artifacts are not yet propagated; skipping")
       }
     }
 
+    case object NoChangesOnExistingPullRequest extends Warnings {
+      def warn[F[_]: Sync](log: Logger): F[Unit] = Sync[F] delay {
+        log.success("Existing pull request is up-to-date.")
+      }
+    }
+
     case object NoChangesError extends Warnings {
-      def warn[F[_]: Sync](log: Logger): F[Unit] = Sync[F].delay {
+      def warn[F[_]: Sync](log: Logger): F[Unit] = Sync[F] delay {
         log.warn("git-commit exited with error")
         log.warn("this usually means the target repository was *already* at the latest version but hasn't published yet")
         log.warn("you should check for a stuck trickle PR on that repository")
@@ -89,14 +95,14 @@ object AutoBump {
     }
 
     case object PushError extends Warnings {
-      def warn[F[_]: Sync](log: Logger): F[Unit] = Sync[F].delay {
+      def warn[F[_]: Sync](log: Logger): F[Unit] = Sync[F] delay {
         log.warn("git-push exited with error")
         log.warn("this usually means some other repository updated the pull request before this one")
       }
     }
 
     final case class NotOldest(maybeOldest: Option[PullRequestDraft], draft: PullRequestDraft) extends Warnings {
-      def warn[F[_]: Sync](log: Logger): F[Unit] = Sync[F].delay {
+      def warn[F[_]: Sync](log: Logger): F[Unit] = Sync[F] delay {
         maybeOldest match {
           case Some(oldest) =>
             log.warn(f"pull request ${draft.number}%d is newer than existing pull request ${oldest.number}%d")
@@ -369,7 +375,10 @@ class AutoBump(
     for {
       _ <- runner !! "git add ."
       result <- (runner !! Seq("git", "commit", "-m", autoBumpCommitTitle(authorRepository))).void.attempt
-    } yield result.leftMap(_ => Warnings.NoChangesError)
+    } yield result leftMap { _ =>
+      if (updateBranch.pullRequest.isEmpty) Warnings.NoChangesError
+      else Warnings.NoChangesOnExistingPullRequest
+    }
   }
 
   def tryPush[F[_]: Sync: Runner](updateBranch: UpdateBranch): F[Either[Warnings, Unit]] = {
